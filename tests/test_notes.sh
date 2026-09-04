@@ -127,6 +127,31 @@ echo "== commit gate ignores a non-commit command =="
 out="$(printf '{"cwd":"%s","session_id":"s8","tool_name":"Bash","tool_input":{"command":"git status"}}' "$FIX" | bash "$HOOK" check-new 2>&1)"; rc=$?
 chk "non-commit passes" "$rc" "0"
 
+echo "== optional extension points: stub fill, extra audit, orphan suppression =="
+# A repo that can resolve identity better than a path can (the Power BI example
+# stamps a report's logicalId, which survives a rename) needs to stamp the stub
+# and to replace the coarse ORPHAN line with its own. Both are opt-in: a config that
+# defines neither must behave exactly as before, which the tests above cover.
+cat >> .claude/notes.conf.sh <<'CONF'
+NOTES_SKIP_ORPHAN=1
+notes_stub_fill() { printf 'stamped_by_repo: %s/%s\n' "$2" "$3" >> "$1"; }
+notes_audit() { echo "[repo-notes] REPO CHECK: reached"; }
+CONF
+run post "$(ev s10 Edit widgets/beta/main.txt)" >/dev/null
+run stop "$(printf '{"cwd":"%s","session_id":"s10","stop_hook_active":false}' "$FIX")" >/dev/null 2>&1
+grep -q 'stamped_by_repo: widget/beta' notes/widgets/beta.md \
+  && ok "notes_stub_fill ran on the new stub" || bad "notes_stub_fill did not run"
+cp notes/widgets/alpha.md notes/widgets/ghost2.md
+out="$(run audit "$(printf '{"cwd":"%s"}' "$FIX")")"
+case "$out" in *"REPO CHECK: reached"*) ok "notes_audit ran" ;; *) bad "notes_audit did not run" ;; esac
+case "$out" in *ORPHAN*) bad "NOTES_SKIP_ORPHAN ignored" ;; *) ok "NOTES_SKIP_ORPHAN suppressed the coarse line" ;; esac
+rm -f notes/widgets/ghost2.md
+python3 - .claude/notes.conf.sh <<'PY'
+import sys
+p=sys.argv[1]; t=open(p).read()
+open(p,"w").write(t.split("NOTES_SKIP_ORPHAN=1")[0])
+PY
+
 echo "== no config means total silence =="
 mv .claude/notes.conf.sh .claude/off.sh
 out="$(run post "$(ev s9 Edit widgets/alpha/main.txt)")"

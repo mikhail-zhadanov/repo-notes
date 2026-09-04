@@ -71,6 +71,12 @@ create_stub() {
   sed -e "s|{{ENTITY}}|$name|g" -e "s|{{KIND}}|$kind|g" \
       -e "s|{{DATE}}|$(date +%F)|g" -e "s|{{TICKET}}|${tick:-}|g" \
       "$NOTES_TEMPLATE" > "$f" 2>/dev/null
+  # Optional: let the repo fill placeholders only it can resolve. A stable
+  # identifier that survives a rename is the case that motivated this — the
+  # Power BI example stamps each report's and model's logicalId, which is what
+  # lets its audit tell "renamed" apart from "deleted".
+  command -v notes_stub_fill >/dev/null 2>&1 && notes_stub_fill "$f" "$kind" "$name" 2>/dev/null
+  return 0
 }
 
 # Anchors are `path :: literal string`. Report only what has gone stale.
@@ -174,7 +180,11 @@ case "$MODE" in
 (4) Never write a person's name, a salary, or any per-person figure.
 (5) An anchor is \`path :: literal string\` and the string must exist in that
     file today. Verify before writing it.
-(6) If nothing decision-worthy happened, just bump 'last_touched'.
+(6) If you quoted a figure to anyone outside this session, put it in
+    '## Figures quoted externally' with the state it was computed under (date,
+    filters, scope). That is what lets a later session tell a changed number
+    from a wrong one.
+(7) If nothing decision-worthy happened, just bump 'last_touched'.
 
 Asked once per entity per session. Then give your normal reply."
     jq -n --arg r "$REASON" \
@@ -262,6 +272,10 @@ Asked once per entity per session. Then give your normal reply."
       [ -f "$f" ] || continue
       case "$f" in *_TEMPLATE.md|*/_archive/*) continue ;; esac
       if ! grep -qxF "$f" <<< "$EXPECTED"; then
+        # A repo that can tell "renamed" from "deleted" (via a stable id in the
+        # frontmatter) says so more precisely in its own notes_audit, so let it
+        # suppress this coarser line rather than print both.
+        [ "${NOTES_SKIP_ORPHAN:-0}" = "1" ] && continue
         echo "[repo-notes] ORPHAN: $f matches no current entity. Renamed, or removed? Move it to $NOTES_DIR/_archive/."
         continue
       fi
@@ -296,7 +310,9 @@ Asked once per entity per session. Then give your normal reply."
         case "$tok" in */*) ;; *) continue ;; esac
         # Not paths: glob/placeholder patterns, URLs, and slash commands
         # (`/notes` is a command, not a directory).
-        case "$tok" in *"<"*|*">"*|*"…"*|*"*"*|http*) continue ;; esac
+        # Placeholders come in several notations: <angle>, {brace}, * glob, and
+        # an ellipsis. `notes/{ws}/` in a rule file is documentation, not a path.
+        case "$tok" in *"<"*|*">"*|*"{"*|*"}"*|*"…"*|*"*"*|http*) continue ;; esac
         case "$tok" in /*) case "${tok#/}" in */*) ;; *) continue ;; esac ;; esac
         if [ "${tok#* :: }" != "$tok" ]; then
           p="${tok%% :: *}"; s="${tok#* :: }"
@@ -311,6 +327,9 @@ Asked once per entity per session. Then give your normal reply."
         fi
       done < <(grep -oE '`[^`]+`' "$r" | tr -d '`')
     done
+
+    # 4. OPTIONAL: checks only this repo can make. Print anomalies, nothing else.
+    command -v notes_audit >/dev/null 2>&1 && notes_audit 2>/dev/null
     exit 0 ;;
 esac
 exit 0

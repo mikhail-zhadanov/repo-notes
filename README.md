@@ -93,6 +93,21 @@ turn, but the most expensive knowledge is often needed while merely reasoning �
 before anything is opened. Match keywords, print a pointer, stay silent
 otherwise. Omit the function and nothing happens.
 
+Three more optional hooks, for repos that know something the mechanism cannot:
+
+| knob | what it is for |
+|---|---|
+| `notes_stub_fill <file> <kind> <name>` | stamp a new notes file with something only this repo can resolve |
+| `notes_audit` | extra audit checks; print anomalies, nothing else |
+| `NOTES_SKIP_ORPHAN=1` | suppress the generic orphan line when `notes_audit` reports it better |
+
+The case that motivated them: a Power BI report is renamed in the Fabric
+service, and the service commits the rename itself. Keyed on the path, that
+looks exactly like "the notes file describes something that no longer exists".
+Keyed on the report's `logicalId` — stamped into the frontmatter at creation by
+`notes_stub_fill`, checked by `notes_audit` — it is correctly reported as a
+rename, with the `git mv` to fix it. See `examples/reports.notes.conf.sh`.
+
 Worked examples in [`examples/`](examples/):
 
 | example | entity |
