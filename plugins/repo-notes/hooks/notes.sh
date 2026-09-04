@@ -146,6 +146,12 @@ case "$MODE" in
     [ -z "${PENDING//[$'\n' ]/}" ] && exit 0
     PENDING="$(printf '%s' "$PENDING" | sed "s|^$ROOT/||" | grep -v '^$' | paste -sd, -)"
 
+    # Blocking Stop: the documented shape is hookSpecificOutput.block/blockReason
+    # (NOT decision/reason, NOT permissionDecision, NOT ok:false — all three are
+    # explicitly invalid for Stop). Exit 2 also blocks on its own, per the
+    # exit-code table, so emit the JSON and exit 2: whichever the running
+    # version honours, the gate fires.
+    # https://code.claude.com/docs/en/hooks
     jq -n --arg r "Record what this session decided before finishing. Update: $PENDING
 
 (1) Add to '## Decisions' anything settled this session: what, WHY, what was
@@ -161,8 +167,8 @@ case "$MODE" in
 (6) If nothing decision-worthy happened, just bump 'last_touched'.
 
 Asked once per entity per session. Then give your normal reply." \
-      '{decision:"block",reason:$r}'
-    exit 0 ;;
+      '{hookSpecificOutput:{hookEventName:"Stop",block:true,blockReason:$r}}'
+    exit 2 ;;
 
   check-new)
     # PreToolUse on git commit: an entity added in THIS commit ships with notes.

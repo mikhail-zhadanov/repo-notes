@@ -62,9 +62,13 @@ out="$(run stop "$(printf '{"cwd":"%s","session_id":"s4","stop_hook_active":fals
 chk "read does not arm" "${out:-<empty>}" "<empty>"
 
 run post "$(ev s5 Edit widgets/alpha/main.txt)" >/dev/null
-out="$(run stop "$(printf '{"cwd":"%s","session_id":"s5","stop_hook_active":false}' "$FIX")")"
-# Parse rather than string-match: jq pretty-prints, so "decision": "block" has a space.
-chk "edit arms the gate" "$(printf '%s' "$out" | jq -r '.decision // "none"')" "block"
+out="$(printf '{"cwd":"%s","session_id":"s5","stop_hook_active":false}' "$FIX" | bash "$HOOK" stop)"; rc=$?
+# The documented Stop shape is hookSpecificOutput.block/blockReason, and exit 2
+# blocks on its own. Assert BOTH: whichever the running version honours, the
+# gate must fire. Parse rather than string-match — jq pretty-prints.
+chk "gate emits block:true"  "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.block // "none"')" "true"
+chk "gate names the event"   "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.hookEventName // "none"')" "Stop"
+chk "gate exits 2"           "$rc" "2"
 case "$out" in *"notes/widgets/alpha.md"*) ok "gate names the file" ;; *) bad "gate should name the file" ;; esac
 [ -f notes/widgets/alpha.md ] && ok "stub created from template" || bad "stub not created"
 
