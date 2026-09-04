@@ -212,19 +212,37 @@ Asked once per entity per session. Then give your normal reply." \
     done <<< "$(notes_entities 2>/dev/null)"
 
     # 2. orphans and stale anchors in notes
-    for f in "$NOTES_DIR"/*/*.md; do
+    #
+    # Orphan detection compares against the set of files the CONFIG expects,
+    # rather than inferring a kind from the directory name. The directory is
+    # named by the config's notes_file and need not equal the kind ("mart" ->
+    # notes/marts/), so inferring it produced a false orphan for every file.
+    EXPECTED="$(while IFS= read -r it; do
+                  [ -z "$it" ] && continue
+                  f="$(nfile "$it")"; [ -n "$f" ] && printf '%s\n' "${f#"$ROOT"/}"
+                done <<< "$(notes_entities 2>/dev/null)")"
+
+    for f in "$NOTES_DIR"/*.md "$NOTES_DIR"/*/*.md; do
       [ -f "$f" ] || continue
-      case "$f" in *_TEMPLATE.md) continue ;; esac
-      stem="$(basename "$f" .md)"; kind="$(basename "$(dirname "$f")")"
-      if [ -z "$(notes_dirs "$kind" "$stem" 2>/dev/null)" ]; then
-        echo "[repo-notes] ORPHAN: $f describes a $kind named '$stem' that no longer exists. Renamed, or removed? Move it to $NOTES_DIR/_archive/."
+      case "$f" in *_TEMPLATE.md|*/_archive/*) continue ;; esac
+      if ! grep -qxF "$f" <<< "$EXPECTED"; then
+        echo "[repo-notes] ORPHAN: $f matches no current entity. Renamed, or removed? Move it to $NOTES_DIR/_archive/."
         continue
       fi
       check_anchors_in "$f"
+      # Owned paths come from the entity whose notes file this is.
+      owned=""
+      while IFS= read -r it; do
+        [ -z "$it" ] && continue
+        [ "$(nfile "$it")" = "$ROOT/$f" ] || continue
+        owned="$(notes_dirs "${it%%|*}" "${it#*|}" 2>/dev/null)"
+        break
+      done <<< "$(notes_entities 2>/dev/null)"
+      [ -z "$owned" ] && continue
       lt="$(sed -n 's/^last_touched: *\([0-9-]*\).*/\1/p' "$f" | head -1)"
-      last="$(git log -1 --format='%cs' -- $(notes_dirs "$kind" "$stem") 2>/dev/null)"
+      last="$(git log -1 --format='%cs' -- $owned 2>/dev/null)"
       if [ -n "$lt" ] && [ -n "$last" ] && [ "$last" \> "$lt" ]; then
-        echo "[repo-notes] BEHIND: $f last_touched $lt, but '$stem' changed on $last. Whoever is next in these files should confirm the notes still hold."
+        echo "[repo-notes] BEHIND: $f last_touched $lt, but its entity changed on $last. Whoever is next in these files should confirm the notes still hold."
       fi
     done
 
@@ -234,7 +252,10 @@ Asked once per entity per session. Then give your normal reply." \
       while IFS= read -r tok; do
         [ -z "$tok" ] && continue
         case "$tok" in */*) ;; *) continue ;; esac
+        # Not paths: glob/placeholder patterns, URLs, and slash commands
+        # (`/notes` is a command, not a directory).
         case "$tok" in *"<"*|*">"*|*"…"*|*"*"*|http*) continue ;; esac
+        case "$tok" in /*) case "${tok#/}" in */*) ;; *) continue ;; esac ;; esac
         if [ "${tok#* :: }" != "$tok" ]; then
           p="${tok%% :: *}"; s="${tok#* :: }"
           if [ ! -e "$p" ]; then
