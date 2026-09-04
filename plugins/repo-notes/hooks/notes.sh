@@ -230,7 +230,9 @@ Asked once per entity per session. Then give your normal reply."
     {
       echo "Blocked: this commit adds a new entity with no notes file."
       echo
-      printf '%s\n' "$MISSING" | sed 's/^/  missing: /'
+      # Repo-relative, as the Stop gate prints it. The absolute path was long
+      # enough to wrap in the block message, which buried the filename.
+      printf '%s\n' "$MISSING" | sed -e "s|^$ROOT/||" -e 's/^/  missing: /'
       echo
       echo "Every entity must have one. Create it from $NOTES_TEMPLATE, record why"
       echo "the entity exists and any decision a cold session could undo, then commit"

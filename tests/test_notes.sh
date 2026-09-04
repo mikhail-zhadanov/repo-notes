@@ -142,6 +142,9 @@ out="$(printf '{"cwd":"%s","session_id":"s7","tool_name":"Bash","tool_input":{"c
 rc=$?
 case "$out" in *"notes/widgets/gamma.md"*) ok "names the missing file" ;; *) bad "should name gamma" ;; esac
 chk "exit code 2" "$rc" "2"
+# Repo-relative, like the Stop gate. An absolute path wrapped in the live block
+# message and buried the filename it was there to communicate.
+case "$out" in *"$FIX/notes"*) bad "prints an absolute path" ;; *) ok "path is repo-relative" ;; esac
 
 echo "== commit gate ignores a non-commit command =="
 out="$(printf '{"cwd":"%s","session_id":"s8","tool_name":"Bash","tool_input":{"command":"git status"}}' "$FIX" | bash "$HOOK" check-new 2>&1)"; rc=$?
