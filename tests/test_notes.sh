@@ -110,6 +110,26 @@ out="$(run audit "$(printf '{"cwd":"%s"}' "$FIX")")"
 case "$out" in *"GONE_AWAY"*) ok "stale anchor reported" ;; *) bad "should report stale anchor" ;; esac
 case "$out" in *"SENTINEL_STRING"*) bad "valid anchor wrongly reported" ;; *) ok "valid anchor silent" ;; esac
 
+echo "== a file tool is judged by its path, not by the text it carries =="
+# Observed live: drafting a PR body that merely mentioned two model paths armed
+# both of those entities' gates, because detection read the whole tool_input
+# including the content being written. Writing ABOUT an entity is not touching
+# it. Runs late on purpose: arming alpha early would make the stub-creation
+# assertion above pass without create_stub having done anything.
+out="$(printf '{"cwd":"%s","session_id":"p1","tool_name":"Write","tool_input":{"file_path":"%s/scratch.md","content":"see widgets/alpha/main.txt for details"}}' "$FIX" "$FIX" | bash "$HOOK" post)"
+chk "content mentioning an entity does not inject" "${out:-<empty>}" "<empty>"
+out="$(run stop "$(printf '{"cwd":"%s","session_id":"p1","stop_hook_active":false}' "$FIX")")"
+chk "content mentioning an entity does not arm" "${out:-<empty>}" "<empty>"
+# And a write outside the repo is not this repo's business at all.
+out="$(printf '{"cwd":"%s","session_id":"p2","tool_name":"Write","tool_input":{"file_path":"/tmp/rn-outside-%s.md","content":"widgets/alpha/main.txt"}}' "$FIX" "$$" | bash "$HOOK" post)"
+chk "write outside the repo ignored" "${out:-<empty>}" "<empty>"
+out="$(run stop "$(printf '{"cwd":"%s","session_id":"p2","stop_hook_active":false}' "$FIX")")"
+chk "write outside the repo does not arm" "${out:-<empty>}" "<empty>"
+# The real thing still works: editing the entity's own file arms it.
+run post "$(ev p3 Edit widgets/alpha/main.txt)" >/dev/null
+out="$(run stop "$(printf '{"cwd":"%s","session_id":"p3","stop_hook_active":false}' "$FIX")" 2>/dev/null)"
+case "$out" in *"notes/widgets/alpha.md"*) ok "editing the entity's own file still arms" ;; *) bad "real edit no longer arms" ;; esac
+
 echo "== orphan detection =="
 cp notes/widgets/alpha.md notes/widgets/ghost.md
 out="$(run audit "$(printf '{"cwd":"%s"}' "$FIX")")"

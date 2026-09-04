@@ -112,7 +112,22 @@ case "$MODE" in
     exit 0 ;;
 
   post)
-    TOOL="$(j .tool_name)"; TEXT="$(j '.tool_input|tostring')"
+    TOOL="$(j .tool_name)"
+    # A file tool is resolved from its PATH, never from the text it carries.
+    # Reading the whole tool_input meant that writing *about* an entity armed
+    # its gate: drafting a PR body that mentioned two model paths marked both
+    # entities mutated, and the file being written was a scratchpad outside the
+    # repo entirely. Bash still needs the full command — the path is in it.
+    case "$TOOL" in
+      Edit|Write|MultiEdit|NotebookEdit|Read)
+        TEXT="$(j '.tool_input.file_path // .tool_input.notebook_path // ""')" ;;
+      *)
+        TEXT="$(j '.tool_input|tostring')" ;;
+    esac
+    # An absolute path outside this repo is not this repo's business.
+    case "$TEXT" in
+      /*) case "$TEXT" in "$ROOT"/*) ;; *) exit 0 ;; esac ;;
+    esac
     CTX=""
     while IFS= read -r it; do
       [ -z "$it" ] && continue
