@@ -21,12 +21,14 @@ linked from here.
 
 ## Decisions
 <!-- Newest first. Each entry states, in this order:
-       what was settled, WHY, what was REJECTED and why, who asked.
+       what was settled, WHY, what was REJECTED and why, and who asked BY
+       ROLE ("asked by the data owner", "engineering call") — never by name,
+       see the confidentiality rule below.
      The rejected half is what stops a future session re-proposing a dead end,
      so it is not optional. Inline is fine:
        - **2026-09-02 (ABC-123)** — filter before casting. Rejected: a
          defensive cast, which would mask input errors instead of surfacing
-         them. Asked by <role>.
+         them. Engineering call.
      If this entity genuinely has nothing non-obvious yet, say exactly that in
      one line. An honest "nothing non-obvious yet, the code is the whole story"
      is useful; eight empty sections are not. -->

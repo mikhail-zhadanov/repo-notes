@@ -97,8 +97,11 @@ case "$MODE" in
     # most expensive knowledge is often needed while merely reasoning. Optional
     # — a config that does not define notes_suggest simply stays silent.
     command -v notes_suggest >/dev/null 2>&1 || exit 0
-    PROMPT="$(printf '%s' "$INPUT" | jq -r '.prompt // empty' 2>/dev/null)"
-    [ -z "$PROMPT" ] && PROMPT="$INPUT"      # raw-text stdin
+    # Field name has varied across versions (prompt / user_prompt), and some
+    # builds pass raw text rather than JSON. Try each, then fall back to the
+    # whole payload — keyword matching works either way.
+    PROMPT="$(printf '%s' "$INPUT" | jq -r '.user_prompt // .prompt // empty' 2>/dev/null)"
+    [ -z "$PROMPT" ] && PROMPT="$INPUT"
     notes_suggest "$PROMPT" 2>/dev/null || true
     exit 0 ;;
 
@@ -155,8 +158,9 @@ case "$MODE" in
     jq -n --arg r "Record what this session decided before finishing. Update: $PENDING
 
 (1) Add to '## Decisions' anything settled this session: what, WHY, what was
-    REJECTED and why, who asked. The rejected half is what stops a future
-    session re-proposing a dead end.
+    REJECTED and why, and who asked BY ROLE (\"asked by the data owner\",
+    \"engineering call\") — never by name, see (4). The rejected half is what
+    stops a future session re-proposing a dead end.
 (2) Add anything that looks like a bug but is not to '## Intentional oddities',
     and a one-line warning to '## Read this before changing anything' if a
     future session might undo it.
@@ -173,7 +177,10 @@ Asked once per entity per session. Then give your normal reply." \
   check-new)
     # PreToolUse on git commit: an entity added in THIS commit ships with notes.
     CMD="$(j '.tool_input.command // ""')"
-    printf '%s' "$CMD" | grep -qE '(^|[^a-zA-Z-])git +commit' || exit 0
+    # Allow global flags between `git` and `commit`: `git -c user.name=x commit`,
+    # `git --no-verify commit`, `git -C dir commit` all count.
+    printf '%s' "$CMD" \
+      | grep -qE '(^|[^a-zA-Z-])git( +-[^ ]+( +[^ -][^ ]*)?)* +commit' || exit 0
     MISSING=""
     while IFS= read -r p; do
       [ -z "$p" ] && continue
@@ -245,8 +252,14 @@ Asked once per entity per session. Then give your normal reply." \
         break
       done <<< "$(notes_entities 2>/dev/null)"
       [ -z "$owned" ] && continue
+      # Read into an array: entity paths legitimately contain spaces (a report
+      # named "Ad hoc: Sales Pipeline" is a real case), and an unquoted
+      # expansion word-splits, silently disabling this check.
+      owned_arr=()
+      while IFS= read -r d; do [ -n "$d" ] && owned_arr+=("$d"); done <<< "$owned"
+      [ "${#owned_arr[@]}" -eq 0 ] && continue
       lt="$(sed -n 's/^last_touched: *\([0-9-]*\).*/\1/p' "$f" | head -1)"
-      last="$(git log -1 --format='%cs' -- $owned 2>/dev/null)"
+      last="$(git log -1 --format='%cs' -- "${owned_arr[@]}" 2>/dev/null)"
       if [ -n "$lt" ] && [ -n "$last" ] && [ "$last" \> "$lt" ]; then
         echo "[repo-notes] BEHIND: $f last_touched $lt, but its entity changed on $last. Whoever is next in these files should confirm the notes still hold."
       fi
