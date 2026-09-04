@@ -69,10 +69,22 @@ no manual install at all:
 
 Both keys apply from a repository file, but `extraKnownMarketplaces` is gated on
 each person **trusting the folder** — nothing is fetched or run from a repo they
-have not accepted. Until then they get no automation, and the notes still read
-fine by hand. Anyone can opt out for themselves with
+have not accepted. Anyone can opt out for themselves with
 `{"enabledPlugins": {"repo-notes@repo-notes": false}}` in the gitignored
 `.claude/settings.local.json`.
+
+Two things that gate follows from, both measured rather than assumed:
+
+- **An untrusted directory gets no automation, silently.** Git worktrees are the
+  common trap: each directory is trusted separately, so a fresh worktree of an
+  already-trusted repo starts untrusted and the plugin simply does not load. If
+  notes never inject, check for the directory in `~/.claude.json` before
+  suspecting the config.
+- **Headless sessions never get it.** In a `claude -p` session started in a repo
+  whose checked-in settings declare the plugin, a user-scope plugin loaded and
+  its hook fired while this one did not — there is no trust dialog to accept.
+  Team install is an interactive-session feature; CI keeps working, just without
+  capture.
 
 Two things to weigh before doing this in a repo you do not own:
 
