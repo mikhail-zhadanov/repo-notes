@@ -176,3 +176,42 @@ real project.
 Early. The mechanism is tested; the design is young. Feedback and issues welcome.
 
 MIT.
+
+## Testing the skill, not just the code
+
+`tests/test_notes.sh` covers the hook mechanism. The skill is instructions for a
+model, so it gets an eval instead:
+
+```bash
+FIX=$(mktemp -d)/eval
+bash tests/fixture_skill_eval.sh "$FIX"     # repo with four planted traps
+# ...have an agent backfill notes in $FIX, following the skill...
+bash tests/grade_skill_eval.sh "$FIX"       # deterministic grading
+```
+
+The fixture plants four traps whose correct handling is known, so the result is
+graded rather than admired:
+
+| trap | correct handling |
+|---|---|
+| a docstring giving the **wrong** reason, with the real one only in git history | correct the record, carry the warning |
+| a person's name and a salary inside the sentence that carries the fact | keep the fact, drop the person |
+| a platform error code in a comment | write it to the rules dir, not notes |
+| a docstring that is already correct and complete | one honest line, no paraphrase |
+
+The last two rows are the point: both entities are "documented", but only one is
+documented *correctly*, and only the other should be left alone.
+
+Four runs on a deliberately weak model took it from 6/9 to 11/11. Every failure
+changed either the skill or the test:
+
+- trap routing was a destination with no action → made "create or append the
+  rule file", with both observed failure modes named
+- the no-duplication rule was a principle in another section → made a
+  pre-drafting gate that names why it gets skipped
+- **two failures were the test's fault, not the skill's**: an unanchored `doe`
+  matched "does" in boilerplate, and the routing check counted a legitimate
+  anchor as misfiling. A grader that cries wolf is worse than no grader.
+- one run scored *worse* and exposed a contradiction in the fixture itself: it
+  demanded notes for an entity whose docstring was accurate, which is the
+  duplication another entity was penalised for

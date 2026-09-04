@@ -38,6 +38,21 @@ the decision it points at.
    true in the code, or a docstring can carry it, **fix the code and write
    nothing.** A stale docstring is worse than a missing note because it actively
    misleads.
+
+   Apply that as a test, not a sentiment. Read the entity's own docstring, then
+   for each sentence you are about to write ask: **is this a paraphrase of
+   something already there?** If yes, delete it. An entry earns its place only
+   by adding what the code cannot say — a rejected alternative, a measured
+   number, a constraint from outside the repo, or a warning that something which
+   looks wrong is deliberate. If nothing survives that test, write the honest
+   one-liner instead of a file that restates the code in worse prose.
+
+   A worked failure: a widget whose docstring already read "retries three times
+   with exponential backoff… backoff doubles each attempt starting at one
+   second" got a notes entry saying "three retries with exponential backoff, the
+   transport is flaky, backoff starts at one second and doubles". Every clause
+   was already in the file. Only the rejected alternatives were new, and they
+   were not enough to justify the entry.
 2. **Append, do not rewrite.** Add to the relevant section, newest first. Leave
    existing entries alone unless they are now wrong, in which case correct them
    and say so.
@@ -104,7 +119,33 @@ pointing at the authoritative file over duplicating a list that will drift —
 "`<macro>` is the authoritative mapping, check it rather than trusting this
 copy" beats a copied table.
 
-### 4. Write
+### 4. Decide per entity, BEFORE drafting: does it already explain itself?
+
+Read the entity's own docstring or description, then answer explicitly for that
+entity: **would anything I write here be a paraphrase of what is already in the
+file?**
+
+If yes, the correct output is the honest one-liner and nothing else. Not a
+tidied-up restatement, not the same fact with an added parenthetical.
+
+This step exists because it is the most commonly failed one, and it fails for a
+predictable reason: writing less feels like under-delivering on a request to
+"backfill notes". It is not. An entity can be completely documented and still
+have a notes file whose entire content is "nothing non-obvious; the docstring is
+the whole story". That file is a success. A paraphrase is a failure that looks
+like a success, and it costs the reader twice — once reading it, once discovering
+it added nothing.
+
+Observed failure, verbatim. Docstring: *"retries three times with exponential
+backoff… Retries three times because the transport is flaky. Backoff doubles
+each attempt starting at one second."* Note written: *"Retry with exponential
+backoff to handle flaky transport. The transport layer intermittently fails and
+requires retries. Three attempts with exponential backoff (1s, 2s, 4s) provide a
+reasonable balance between resilience and latency."* Every fact was already in
+the docstring; `(1s, 2s, 4s)` and "balance between resilience and latency" are
+restatement, not new knowledge. The right answer was one line.
+
+### 5. Write
 
 Follow Write mode below. Two additions specific to backfill:
 
@@ -120,7 +161,7 @@ Follow Write mode below. Two additions specific to backfill:
   vendor soft-deletes separately from the connector's hard-deletes" is the whole
   point.
 
-### 5. Many entities at once
+### 6. Many entities at once
 
 Group them by domain affinity and fan out one agent per group, so each builds
 context once. Give every agent: the entity list, the four sources above, the
@@ -143,6 +184,27 @@ printf '{"cwd":"%s"}' "$PWD" | bash "$CLAUDE_PLUGIN_ROOT/hooks/notes.sh" audit
 Silence means: every entity has a file, every anchor resolves, no cited path has
 gone stale, and no notes file describes something that no longer exists. It
 prints only anomalies.
+
+## A platform trap you find must be written, not just noticed
+
+"Traps go to the rules directory" is a destination, not an action. When you meet
+one — an error code, a version-dependent behaviour, a workaround for how a tool
+behaves rather than for what this repo wants — **create or append to
+`<rules dir>/knowledge-<platform>-<topic>.md`.** Give it the same shape as a
+notes entry: the rule, why, the tell, an anchor, when it was verified.
+
+Two ways to get this wrong, both observed:
+
+- **Leaving it in the notes file.** It is then filed under one entity while
+  applying to every caller of that tool.
+- **Leaving it only as a code anchor.** An anchor is a pointer for the audit,
+  not a home for a rule. In one eval a trap survived solely as
+  `` `path :: array-typed payload columns with ETL-9999` `` inside an unrelated
+  entity's notes, with the rules directory left empty — the fact was findable
+  only by whoever already knew to read that file.
+
+If you decide not to write the rule file, say so explicitly in your report. An
+unrouted trap is a finding to hand back, not something to quietly drop.
 
 ## Do not put here
 
