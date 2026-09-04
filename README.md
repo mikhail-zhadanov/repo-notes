@@ -39,16 +39,49 @@ paths and tool names.
 
 ## Install
 
-Add as a local marketplace and enable the plugin:
-
-```bash
-git clone https://github.com/mikhail-zhadanov/repo-notes ~/dev/repo-notes
+```
+/plugin marketplace add mikhail-zhadanov/repo-notes
+/plugin install repo-notes@repo-notes
 ```
 
+Pick the scope deliberately. **User** scope covers every repo you work in and
+stays inert in any repo without a `.claude/notes.conf.sh`. **Project** scope
+pins the plugin to one repo, which is not what you want if you use it in
+several.
+
+To develop the plugin itself, add your clone as the marketplace instead
+(`/plugin marketplace add ~/dev/repo-notes`) — then your edits are live, with no
+push-and-update cycle.
+
+### Giving it to a whole team
+
+Declare it in the repo's checked-in `.claude/settings.json`, and a clone needs
+no manual install at all:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "repo-notes": { "source": { "source": "github", "repo": "mikhail-zhadanov/repo-notes" } }
+  },
+  "enabledPlugins": { "repo-notes@repo-notes": true }
+}
 ```
-/plugin marketplace add ~/dev/repo-notes
-/plugin install repo-notes
-```
+
+Both keys apply from a repository file, but `extraKnownMarketplaces` is gated on
+each person **trusting the folder** — nothing is fetched or run from a repo they
+have not accepted. Until then they get no automation, and the notes still read
+fine by hand. Anyone can opt out for themselves with
+`{"enabledPlugins": {"repo-notes@repo-notes": false}}` in the gitignored
+`.claude/settings.local.json`.
+
+Two things to weigh before doing this in a repo you do not own:
+
+- **`.claude/notes.conf.sh` is executed** (see Security below), so committing
+  enablement means committing "this repo runs that file in everyone's session".
+  It deserves the review a CI script gets.
+- **A marketplace tracks its default branch**, with no version pin. A push to
+  the marketplace repo changes every consumer's hooks. If that matters, host the
+  marketplace where the same people who own the consuming repos own it.
 
 Then in each repository that should use it:
 
