@@ -136,6 +136,31 @@ out="$(run audit "$(printf '{"cwd":"%s"}' "$FIX")")"
 case "$out" in *"ORPHAN"*) ok "orphan reported" ;; *) bad "should report orphan" ;; esac
 rm -f notes/widgets/ghost.md
 
+echo "== a shallow clone must not report every entity as BEHIND =="
+# A --depth 1 clone has one commit, so `git log -1 -- <path>` returns the tip for
+# every path and each entity looks behind its notes. Observed for real on a
+# shallow clone of a repo whose notes were all current: four false BEHIND lines.
+SH="$(mktemp -d)/shallow"
+git clone -q --depth 1 "file://$FIX" "$SH" 2>/dev/null
+if [ -d "$SH/.git" ]; then
+  # Backdate every notes file so a full clone WOULD report BEHIND, isolating the
+  # shallow guard as the only reason the output is quiet.
+  for nf in "$SH"/notes/widgets/*.md; do
+    [ -f "$nf" ] || continue
+    python3 - "$nf" <<'PY'
+import re,sys
+p=sys.argv[1]; t=open(p).read()
+open(p,"w").write(re.sub(r'last_touched: .*', 'last_touched: 2000-01-01', t, count=1))
+PY
+  done
+  out="$(printf '{"cwd":"%s"}' "$SH" | bash "$HOOK" audit)"
+  case "$out" in *BEHIND*) bad "shallow clone reported BEHIND" ;; *) ok "shallow clone silent on BEHIND" ;; esac
+  chk "shallow repo detected" "$(git -C "$SH" rev-parse --is-shallow-repository)" "true"
+  rm -rf "$SH"
+else
+  bad "could not build a shallow clone to test with"
+fi
+
 echo "== commit gate blocks a new entity with no notes =="
 mkdir -p widgets/gamma; echo g > widgets/gamma/main.txt; git add -A >/dev/null 2>&1
 out="$(printf '{"cwd":"%s","session_id":"s7","tool_name":"Bash","tool_input":{"command":"git commit -m x"}}' "$FIX" | bash "$HOOK" check-new 2>&1)"

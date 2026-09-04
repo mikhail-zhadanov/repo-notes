@@ -252,6 +252,7 @@ Asked once per entity per session. Then give your normal reply."
     exit 0 ;;
 
   audit)  # prints only anomalies; safe to run by hand
+    SHALLOW="$(git rev-parse --is-shallow-repository 2>/dev/null)"
     # 1. coverage
     #
     # Summarised, not enumerated. One line per uncovered entity meant a repo
@@ -314,6 +315,11 @@ Asked once per entity per session. Then give your normal reply."
       [ "${#owned_arr[@]}" -eq 0 ] && continue
       lt="$(sed -n 's/^last_touched: *\([0-9-]*\).*/\1/p' "$f" | head -1)"
       last="$(git log -1 --format='%cs' -- "${owned_arr[@]}" 2>/dev/null)"
+      # A shallow clone has one commit, so every path's "last change" is the tip
+      # and every entity looks behind. Observed on a `--depth 1` clone: four
+      # false BEHIND lines, which is exactly the unconditional noise the
+      # coverage summary was reshaped to avoid.
+      if [ "$SHALLOW" = "true" ]; then last=""; fi
       if [ -n "$lt" ] && [ -n "$last" ] && [ "$last" \> "$lt" ]; then
         echo "[repo-notes] BEHIND: $f last_touched $lt, but its entity changed on $last. Whoever is next in these files should confirm the notes still hold."
       fi
