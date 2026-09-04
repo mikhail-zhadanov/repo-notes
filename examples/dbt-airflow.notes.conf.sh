@@ -78,3 +78,28 @@ notes_dirs() {
     mart)   ls -d "dbt/models/mart_$2" 2>/dev/null ;;
   esac
 }
+
+# --- 6. OPTIONAL: route by intent, before any file is opened ----------------
+# Path-scoped rules and note injection both need a file open in the turn. The
+# most expensive knowledge is often needed while merely reasoning about a
+# change. Match keywords, print a pointer, stay silent otherwise.
+notes_suggest() {
+  local lower; lower="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  # Caller already named a rule file: stay out of the way.
+  printf '%s' "$lower" | grep -q "knowledge-" && return 0
+  _emit() {
+    printf 'Repo knowledge may apply here.\n\nRead `%s` before proposing a change. %s\n' "$1" "$2"
+    return 0
+  }
+  if printf '%s' "$lower" | grep -qE 'materiali[sz]|snap_|incremental|full refresh|overwrit|rolling window|accumulat'; then
+    _emit ".claude/rules/knowledge-dbt-materialization.md" \
+          "It records which models must accumulate versus overwrite, and why the docstrings cannot be trusted to tell them apart."
+    return 0
+  fi
+  if printf '%s' "$lower" | grep -qE 'import into|from parquet|from csv|seed|int96|unload'; then
+    _emit ".claude/rules/knowledge-warehouse-import.md" "It records the load-path traps."
+    return 0
+  fi
+  # ... one route per rule file
+  return 0
+}

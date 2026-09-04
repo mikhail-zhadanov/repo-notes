@@ -6,7 +6,7 @@
 # define the contract documented in examples/. See DESIGN.md for why the
 # boundary is here.
 #
-# Subcommands: session-start | post | stop | session-end | audit | check-new
+# Subcommands: session-start | suggest | post | stop | session-end | audit | check-new
 #
 # Rules this file obeys:
 #  - Every path exits 0 unless deliberately emitting decision JSON. A broken
@@ -90,6 +90,17 @@ check_anchors_in() {
 }
 
 case "$MODE" in
+
+  suggest)
+    # UserPromptSubmit: route by INTENT, before any file is opened. Path-scoped
+    # loading and `post` injection both need a file to exist in the turn; the
+    # most expensive knowledge is often needed while merely reasoning. Optional
+    # — a config that does not define notes_suggest simply stays silent.
+    command -v notes_suggest >/dev/null 2>&1 || exit 0
+    PROMPT="$(printf '%s' "$INPUT" | jq -r '.prompt // empty' 2>/dev/null)"
+    [ -z "$PROMPT" ] && PROMPT="$INPUT"      # raw-text stdin
+    notes_suggest "$PROMPT" 2>/dev/null || true
+    exit 0 ;;
 
   post)
     TOOL="$(j .tool_name)"; TEXT="$(j '.tool_input|tostring')"

@@ -76,6 +76,12 @@ lives in `.claude/notes.conf.sh`:
 Plus `NOTES_MUT_RE`, the shell verbs that count as a change so a read-only
 command does not arm the gate.
 
+Optionally `notes_suggest "$prompt"`, which routes by **intent** rather than by
+path. Path-scoped rules and note injection both need a file to be open in the
+turn, but the most expensive knowledge is often needed while merely reasoning —
+before anything is opened. Match keywords, print a pointer, stay silent
+otherwise. Omit the function and nothing happens.
+
 Worked examples in [`examples/`](examples/):
 
 | example | entity |
