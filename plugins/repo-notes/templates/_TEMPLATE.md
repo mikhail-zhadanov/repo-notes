@@ -14,6 +14,11 @@ Platform and tool traps do NOT belong here — they go to the rules directory.
 Anything long-form (a spec, a field mapping, a runbook) goes to `docs/` and is
 linked from here.
 
+**Delete every section you do not use.** Only "Decisions" is mandatory. This
+file is scaffolding, not a form to complete: a note carrying two real warnings
+is worth more than one carrying two warnings and five empty headings, because
+the empty ones train the next reader to skim past all of it.
+
 ## Read this before changing anything
 <!-- One line per thing a cold session would "fix" and break. Point at the
      decision. If there is nothing, leave the single dash. -->

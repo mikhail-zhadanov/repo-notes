@@ -108,10 +108,13 @@ copy" beats a copied table.
 
 Follow Write mode below. Two additions specific to backfill:
 
-- **Never pad.** An entity with nothing non-obvious gets **one honest line**
-  under Decisions saying exactly that. Eight empty sections dilute the files
-  that carry real warnings, and a folder of placeholders is how the previous
-  attempt at this died.
+- **Never pad, and delete what you do not use.** The stub arrives with every
+  section present; that is scaffolding, not a form. Keep the ones you filled,
+  delete the rest. Only Decisions is mandatory, and an entity with nothing
+  non-obvious gets **one honest line** there saying exactly that. Empty
+  headings dilute the files that carry real warnings and train the next reader
+  to skim past all of it — a folder of placeholders is how the previous attempt
+  at this died.
 - **Prefer WHY over WHAT, ruthlessly.** "Syncs via the vendor connector" is
   worthless — the code says so. "Filter all three deletion flags because the
   vendor soft-deletes separately from the connector's hard-deletes" is the whole

@@ -41,10 +41,21 @@ git add -A >/dev/null 2>&1; git -c user.email=t@t -c user.name=t commit -qm init
 run() { printf '%s' "$2" | bash "$HOOK" "$1"; }
 ev()  { printf '{"cwd":"%s","session_id":"%s","tool_name":"%s","tool_input":{"file_path":"%s"}}' "$FIX" "$1" "$2" "$3"; }
 
-echo "== audit reports missing coverage =="
+echo "== audit summarises missing coverage =="
 out="$(run audit "$(printf '{"cwd":"%s"}' "$FIX")")"
-case "$out" in *"MISSING: widget 'alpha'"*) ok "flags alpha" ;; *) bad "should flag alpha" ;; esac
-case "$out" in *"MISSING: widget 'beta'"*)  ok "flags beta"  ;; *) bad "should flag beta"  ;; esac
+case "$out" in *"2 entities with no notes file"*) ok "counts the gaps" ;; *) bad "should count 2 gaps" ;; esac
+case "$out" in *alpha*) ok "names alpha while the list is short" ;; *) bad "should name alpha" ;; esac
+case "$out" in *beta*)  ok "names beta while the list is short"  ;; *) bad "should name beta"  ;; esac
+chk "one line, not one per entity" "$(printf '%s' "$out" | grep -c 'no notes file')" "1"
+
+echo "== audit truncates a long gap list rather than flooding =="
+for n in c1 c2 c3 c4 c5 c6 c7 c8; do mkdir -p "widgets/$n"; echo x > "widgets/$n/main.txt"; done
+out="$(run audit "$(printf '{"cwd":"%s"}' "$FIX")")"
+case "$out" in *"10 entities with no notes file, e.g."*) ok "summarises 10 gaps" ;; *) bad "should summarise 10 gaps (got: $(printf '%s' "$out" | head -1))" ;; esac
+chk "still one line at 10 gaps" "$(printf '%s' "$out" | grep -c 'no notes file')" "1"
+n_named="$(printf '%s' "$out" | head -1 | grep -o 'c[0-9]' | wc -l | tr -d ' ')"
+if [ "$n_named" -le 5 ]; then ok "names at most 5 examples"; else bad "named $n_named examples, should cap at 5"; fi
+rm -rf widgets/c1 widgets/c2 widgets/c3 widgets/c4 widgets/c5 widgets/c6 widgets/c7 widgets/c8
 
 echo "== post injects for a real entity, ignores a fake one =="
 out="$(run post "$(ev s1 Read widgets/alpha/main.txt)")"

@@ -133,6 +133,33 @@ slot; the template, the rules and the stop prompt all forbid a name, a salary or
 any per-person figure. The absence of a free-text field does more work than any
 warning.
 
+## Security: the config is executed
+
+`.claude/notes.conf.sh` is **sourced**, so it runs as shell with your
+permissions whenever a hook fires. Anyone who can land a commit in a branch you
+check out can run code on your machine through it.
+
+Judge that against the baseline rather than in isolation: Claude Code already
+executes repo-controlled code by design — `.claude/settings.json` hooks, test
+runners, build scripts, task definitions. A repo you check out and work in is
+already trusted to that degree, and this adds one more file to that set rather
+than opening a new class of exposure.
+
+It is still worth knowing:
+
+- **Review `.claude/notes.conf.sh` in PRs like any other executable file.** A
+  change to it deserves the scrutiny a change to a CI script gets.
+- **Do not enable this plugin while working in untrusted forks.** The hooks fire
+  on ordinary tool calls, so there is no moment where you consciously opt in.
+- The mechanism never sources anything else, never reads the transcript, and
+  never executes note content.
+
+A declarative config would remove this, and was considered. It was rejected
+because the two features that have actually caught bugs — the DAG alias map and
+intent-based routing — are conditional logic, and expressing them declaratively
+means inventing a small language and an interpreter for it. That trade may be
+worth revisiting if the plugin is ever used on repos you do not control.
+
 ## Tests
 
 ```bash

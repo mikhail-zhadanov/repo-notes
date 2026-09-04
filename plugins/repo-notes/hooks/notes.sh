@@ -218,11 +218,26 @@ Asked once per entity per session. Then give your normal reply." \
 
   audit)  # prints only anomalies; safe to run by hand
     # 1. coverage
+    #
+    # Summarised, not enumerated. One line per uncovered entity meant a repo
+    # with 40 gaps printed 40 lines at every single session start, forever,
+    # until someone backfilled — and noise that appears unconditionally stops
+    # being read, which defeats the point of reporting it at all.
+    MISS_N=0; MISS_NAMES=""
     while IFS= read -r it; do
       [ -z "$it" ] && continue
       f="$(nfile "$it")"; [ -z "$f" ] && continue
-      [ -f "$f" ] || echo "[repo-notes] MISSING: ${it%%|*} '${it#*|}' has no ${f#"$ROOT"/}"
+      [ -f "$f" ] && continue
+      MISS_N=$((MISS_N + 1))
+      [ "$MISS_N" -le 5 ] && MISS_NAMES="$MISS_NAMES ${it#*|}"
     done <<< "$(notes_entities 2>/dev/null)"
+    if [ "$MISS_N" -gt 0 ]; then
+      if [ "$MISS_N" -le 5 ]; then
+        echo "[repo-notes] $MISS_N entit$([ "$MISS_N" = 1 ] && echo y || echo ies) with no notes file:${MISS_NAMES}. Run /notes backfill."
+      else
+        echo "[repo-notes] $MISS_N entities with no notes file, e.g.${MISS_NAMES}. Run /notes backfill for the full list."
+      fi
+    fi
 
     # 2. orphans and stale anchors in notes
     #
