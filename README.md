@@ -1,0 +1,134 @@
+# repo-notes
+
+Entity-keyed knowledge capture for [Claude Code](https://claude.com/claude-code).
+
+Records **why** a repository is built the way it is — decisions, rejected
+alternatives, and which apparent bugs are deliberate — and surfaces it at the
+moment of need instead of hoping someone opens a document.
+
+The code is the truth for *what*. These notes are the truth for *why*.
+
+## The problem it solves
+
+Long agent sessions produce durable insight that survives only in someone's head
+or in a commit message nobody re-reads. The next session rebuilds the reasoning,
+or "fixes" something that was a decision.
+
+Most existing answers are ADR logs keyed by decision or date, read by dumping the
+last N entries at session start. That answers *"what did we decide lately"*. The
+question at the moment of need is *"I am about to change this file, what will
+bite me"* — and a chronological log cannot answer it.
+
+**repo-notes keys on the entity instead, so the right note arrives when you touch
+the right files.** See [DESIGN.md](DESIGN.md) for the reasoning and the evidence.
+
+## How it behaves
+
+| moment | behaviour |
+|---|---|
+| you read or edit an entity's files | that entity's notes are injected into context, once per session |
+| you change something and the turn ends | asked once per entity to record what was decided and what was rejected |
+| a new entity is committed without notes | `git commit` is blocked, naming the missing file |
+| session start | an audit reports missing notes, orphaned notes, and stale anchors |
+| `/notes` | manual read/write, for investigations that changed no file |
+
+Every hook fails open. A broken or unconfigured hook degrades to "no capture" and
+never blocks work. **No hook ever reads the transcript or tool output** — only
+paths and tool names.
+
+## Install
+
+Add as a local marketplace and enable the plugin:
+
+```bash
+git clone https://github.com/mikhail-zhadanov/repo-notes ~/dev/repo-notes
+```
+
+```
+/plugin marketplace add ~/dev/repo-notes
+/plugin install repo-notes
+```
+
+Then in each repository that should use it:
+
+```bash
+mkdir -p notes .claude/rules
+cp ~/dev/repo-notes/examples/<closest>.notes.conf.sh .claude/notes.conf.sh
+cp ~/dev/repo-notes/plugins/repo-notes/templates/_TEMPLATE.md notes/_TEMPLATE.md
+$EDITOR .claude/notes.conf.sh          # define your entities
+```
+
+Commit `notes/`, `.claude/notes.conf.sh` and `.claude/rules/` — they are
+team-visible knowledge, reviewable in the same PR as the code they describe.
+
+## The contract
+
+The mechanism is identical in every repo. Only entity resolution differs, and it
+lives in `.claude/notes.conf.sh`:
+
+| function | answers |
+|---|---|
+| `notes_entities()` | which entities exist — emits `kind\|name` per line |
+| `notes_detect "$text"` | which entities does this text refer to |
+| `notes_file <kind> <name>` | where that entity's notes file lives |
+| `notes_dirs <kind> <name>` | which paths the entity owns |
+
+Plus `NOTES_MUT_RE`, the shell verbs that count as a change so a read-only
+command does not arm the gate.
+
+Worked examples in [`examples/`](examples/):
+
+| example | entity |
+|---|---|
+| `dbt-airflow.notes.conf.sh` | source pipeline, mart domain |
+| `terraform.notes.conf.sh` | provider module |
+| `reports.notes.conf.sh` | BI report |
+
+## Anti-rot
+
+A note may cite `path :: literal string`. The audit greps for it, so a rename or
+deletion surfaces as a stale anchor rather than quietly becoming a lie.
+
+This is the check that pays for itself. On its first real use it caught three
+errors in freshly written notes: a directory renamed months earlier and still
+cited, a mapping copied from a stale document, and cross-links broken by a rename
+in the same commit.
+
+## Where a fact belongs
+
+First match wins, so one fact has exactly one home:
+
+1. about a person, a preference, or ticket status → personal memory, **not** the repo
+2. a formatting or naming rule checkable without knowing the data → your style guide
+3. a procedure every session needs → the agent's instruction file
+4. a platform or tool trap → `.claude/rules/`, auto-loaded by path glob
+5. **already true in the code, or fixable in a docstring → fix the code, write nothing**
+6. long-form spec, field mapping, runbook → `docs/`, linked from the notes file
+7. otherwise, the why behind one entity → `notes/`
+
+Rule 5 does the most work. A stale docstring is worse than a missing note,
+because it actively misleads.
+
+## Confidentiality
+
+These files are committed. The template has typed fields and no free narrative
+slot; the template, the rules and the stop prompt all forbid a name, a salary or
+any per-person figure. The absence of a free-text field does more work than any
+warning.
+
+## Tests
+
+```bash
+bash tests/test_notes.sh
+```
+
+Builds a throwaway repo in a temp directory and exercises injection, the gate,
+the once-per-entity guard, the loop guard, subagent suppression, anchor checking,
+orphan detection, the commit gate and unconfigured silence. No dependency on any
+real project.
+
+## Status
+
+Early. The mechanism is tested; the design is young. Feedback and issues welcome.
+
+MIT.

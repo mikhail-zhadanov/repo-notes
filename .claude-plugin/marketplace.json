@@ -1,0 +1,25 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "repo-notes",
+  "version": "0.1.0",
+  "description": "Entity-keyed knowledge capture for Claude Code",
+  "owner": { "name": "mikhail-zhadanov" },
+  "metadata": {
+    "description": "repo-notes: records WHY a repo is built the way it is, keyed by entity so it surfaces at the moment of need",
+    "pluginRoot": "./plugins"
+  },
+  "plugins": [
+    {
+      "name": "repo-notes",
+      "source": "./plugins/repo-notes",
+      "description": "Captures and retrieves per-entity design knowledge via hooks. Repo supplies .claude/notes.conf.sh; the mechanism is identical everywhere.",
+      "version": "0.1.0",
+      "author": { "name": "mikhail-zhadanov" },
+      "homepage": "https://github.com/mikhail-zhadanov/repo-notes",
+      "repository": "https://github.com/mikhail-zhadanov/repo-notes",
+      "license": "MIT",
+      "keywords": ["knowledge-management", "adr", "decision-log", "hooks", "documentation"],
+      "category": "development"
+    }
+  ]
+}

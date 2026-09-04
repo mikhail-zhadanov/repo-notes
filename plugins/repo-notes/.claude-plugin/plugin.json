@@ -1,0 +1,7 @@
+{
+  "name": "repo-notes",
+  "version": "0.1.0",
+  "description": "Entity-keyed knowledge capture: records WHY a repo is built the way it is, and surfaces it when a session touches the relevant files.",
+  "author": { "name": "mikhail-zhadanov" },
+  "license": "MIT"
+}
