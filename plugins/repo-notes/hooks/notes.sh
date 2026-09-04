@@ -149,13 +149,19 @@ case "$MODE" in
     [ -z "${PENDING//[$'\n' ]/}" ] && exit 0
     PENDING="$(printf '%s' "$PENDING" | sed "s|^$ROOT/||" | grep -v '^$' | paste -sd, -)"
 
-    # Blocking Stop: the documented shape is hookSpecificOutput.block/blockReason
-    # (NOT decision/reason, NOT permissionDecision, NOT ok:false — all three are
-    # explicitly invalid for Stop). Exit 2 also blocks on its own, per the
-    # exit-code table, so emit the JSON and exit 2: whichever the running
-    # version honours, the gate fires.
+    # Blocking Stop, belt and braces. The documented JSON shape is
+    # hookSpecificOutput.block/blockReason (NOT decision/reason, NOT
+    # permissionDecision, NOT ok:false — all three are explicitly invalid for
+    # Stop), and exit 2 blocks on its own per the exit-code table.
+    #
+    # OBSERVED 2026-09-04, first live firing: exit 2 blocked the stop, but the
+    # harness surfaced only "No stderr output" — it reads **stderr** for the
+    # exit-2 path and never showed blockReason from stdout. So the gate fired
+    # with an empty prompt, which is worse than not firing: the turn is
+    # interrupted and the model is told nothing.
+    # Therefore write the reason to BOTH stdout JSON and stderr.
     # https://code.claude.com/docs/en/hooks
-    jq -n --arg r "Record what this session decided before finishing. Update: $PENDING
+    REASON="Record what this session decided before finishing. Update: $PENDING
 
 (1) Add to '## Decisions' anything settled this session: what, WHY, what was
     REJECTED and why, and who asked BY ROLE (\"asked by the data owner\",
@@ -170,8 +176,10 @@ case "$MODE" in
     file today. Verify before writing it.
 (6) If nothing decision-worthy happened, just bump 'last_touched'.
 
-Asked once per entity per session. Then give your normal reply." \
+Asked once per entity per session. Then give your normal reply."
+    jq -n --arg r "$REASON" \
       '{hookSpecificOutput:{hookEventName:"Stop",block:true,blockReason:$r}}'
+    printf '%s\n' "$REASON" >&2
     exit 2 ;;
 
   check-new)
