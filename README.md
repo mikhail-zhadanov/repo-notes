@@ -31,6 +31,7 @@ the right files.** See [DESIGN.md](DESIGN.md) for the reasoning and the evidence
 | a new entity is committed without notes | `git commit` is blocked, naming the missing file |
 | session start | an audit reports missing notes, orphaned notes, and stale anchors |
 | `/notes` | manual read/write, for investigations that changed no file |
+| `/notes` backfill | bootstrap a repo: mines docstrings, comments, git log and the agent's personal memory into notes files, then gates the result |
 
 Every hook fails open. A broken or unconfigured hook degrades to "no capture" and
 never blocks work. **No hook ever reads the transcript or tool output** — only
@@ -60,6 +61,16 @@ $EDITOR .claude/notes.conf.sh          # define your entities
 
 Commit `notes/`, `.claude/notes.conf.sh` and `.claude/rules/` — they are
 team-visible knowledge, reviewable in the same PR as the code they describe.
+
+Then bootstrap an existing repo with `/notes backfill`. It mines what is already
+there — docstrings, inline comments, `git log`, and the agent's personal memory
+directory — into one notes file per entity, and gates the result on coverage,
+anchors resolving and a confidentiality scan.
+
+Personal memory is the richest seam, because it is where knowledge went while
+the repo had nowhere to put it. It is also the least reliable: it records what
+was true when written. Treat it as a lead and verify every borrowed fact against
+the code, which is exactly what the anchor check enforces.
 
 ## The contract
 
