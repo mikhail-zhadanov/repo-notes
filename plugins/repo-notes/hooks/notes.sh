@@ -41,7 +41,10 @@ done
 NOTES_DIR="${NOTES_DIR:-notes}"
 NOTES_TEMPLATE="${NOTES_TEMPLATE:-$NOTES_DIR/_TEMPLATE.md}"
 NOTES_RULES_DIR="${NOTES_RULES_DIR:-.claude/rules}"
-NOTES_MUT_RE="${NOTES_MUT_RE:-(^|[^a-zA-Z_-])(mv|cp|rm|sed -i)([^a-zA-Z_-]|\$)}"
+# Optional, no default: shell verbs that count as a change even though no file
+# under the entity changes (`terraform apply`, `dbt run`). A file change is
+# detected from git on its own, see fingerprint below.
+NOTES_MUT_RE="${NOTES_MUT_RE:-}"
 # Every worktree of one repo shares one state namespace, named after the main
 # checkout. Keyed by the worktree's own basename, a session that moved its work
 # into a worktree split its state in two: the gate armed in one namespace was
@@ -68,13 +71,36 @@ nhash()   { git hash-object "$1" 2>/dev/null || echo absent; }
 # entity's first mutation there". Content, not mtime: an entry added and then
 # reverted leaves a fresh mtime and the same text, and must not count as
 # recorded. Kept most-recently-touched last, so the gate can name that copy.
-touch_baseline() {
+touch_baseline() {  # entity checkout notesfile [hash already taken]
   local h
   h="$(awk -F'\t' -v k="$1" -v r="$2" '$1==k && $2==r {print $3; exit}' "$STATE/baseline" 2>/dev/null)"
-  [ -z "$h" ] && h="$(nhash "$3")"
+  [ -z "$h" ] && h="${4:-$(nhash "$3")}"
   { awk -F'\t' -v k="$1" -v r="$2" '!($1==k && $2==r)' "$STATE/baseline" 2>/dev/null
     printf '%s\t%s\t%s\n' "$1" "$2" "$h"; } > "$STATE/baseline.tmp" \
     && mv "$STATE/baseline.tmp" "$STATE/baseline"
+}
+
+# Content of every file the entity owns in the current checkout, tracked or
+# untracked, ignored files excluded (a tool's local cache is not a change).
+# Taken from the working tree, not HEAD, so a commit in the same command still
+# shows as a change.
+fingerprint() {
+  local dirs=() d files
+  while IFS= read -r d; do [ -n "$d" ] && dirs+=("$d"); done \
+    <<< "$(notes_dirs "${1%%|*}" "${1#*|}" 2>/dev/null)"
+  [ "${#dirs[@]}" -eq 0 ] && { echo none; return; }
+  files="$(git -c core.quotePath=false ls-files -co --exclude-standard -- "${dirs[@]}" 2>/dev/null \
+           | while IFS= read -r d; do [ -f "$d" ] && printf '%s\n' "$d"; done)"
+  { printf '%s\n' "$files"
+    [ -n "$files" ] && printf '%s\n' "$files" | git hash-object --stdin-paths 2>/dev/null
+  } | git hash-object --stdin
+}
+
+# Every worktree of this repo, main checkout included. A Bash command often
+# starts with `cd <worktree>;`, so the checkout it changes is not the hook's cwd.
+worktrees() {
+  git -C "$ROOT" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' \
+    | while IFS= read -r w; do [ -d "$w" ] && printf '%s\n' "$w"; done
 }
 
 create_stub() {
@@ -177,12 +203,26 @@ case "$MODE" in
       fi
       case "$TOOL" in
         Edit|Write|MultiEdit|NotebookEdit) ;;
-        Bash) printf '%s' "$TEXT" | grep -qE "$NOTES_MUT_RE" || continue ;;
+        # A repo's explicit action verbs (`terraform apply`) arm without any
+        # file change. A file change is judged below, from the fingerprints.
+        Bash) [ -n "$NOTES_MUT_RE" ] && printf '%s' "$TEXT" | grep -qE "$NOTES_MUT_RE" || continue ;;
         *) continue ;;
       esac
       mark "$it" mutated
       touch_baseline "$it" "$ROOT" "$f"
     done <<< "$(notes_detect "$TEXT" 2>/dev/null)"
+    # Bash: an entity is mutated only if its files differ from the fingerprint
+    # taken just before this command, in whichever worktree they changed.
+    if [ "$TOOL" = Bash ]; then
+      PRE="$STATE/pre.$(j '.tool_use_id // "last"')"
+      while IFS=$'\t' read -r it w fp nh; do
+        [ -z "$it" ] && continue
+        [ "$( (cd "$w" 2>/dev/null && fingerprint "$it") )" = "$fp" ] && continue
+        mark "$it" mutated
+        touch_baseline "$it" "$w" "$( (cd "$w" 2>/dev/null && nfile "$it") )" "$nh"
+      done 2>/dev/null < "$PRE"
+      rm -f "$PRE"
+    fi
     [ -n "$CTX" ] && jq -n --arg c "$CTX" \
       '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:$c}}'
     exit 0 ;;
@@ -255,8 +295,24 @@ Asked once per entity per session. Then give your normal reply."
     exit 2 ;;
 
   check-new)
-    # PreToolUse on git commit: an entity added in THIS commit ships with notes.
     CMD="$(j '.tool_input.command // ""')"
+    # PreToolUse on any Bash command: fingerprint every entity the command
+    # names, in every worktree, so `post` can tell whether the command changed
+    # it. Naming a path is not changing it: a read-only `json.load(open(...))`,
+    # or a heredoc whose TEXT mentions a report while it edits another file,
+    # both armed the gate when a verb match anywhere in the command counted.
+    # Keyed by tool_use_id: parallel Bash calls must not overwrite each other.
+    PRE="$STATE/pre.$(j '.tool_use_id // "last"')"
+    : > "$PRE"
+    while IFS= read -r w; do
+      ( cd "$w" 2>/dev/null || exit 0
+        while IFS= read -r it; do
+          [ -z "$it" ] && continue
+          printf '%s\t%s\t%s\t%s\n' "$it" "$w" "$(fingerprint "$it")" "$(nhash "$(nfile "$it")")"
+        done <<< "$(notes_detect "$CMD" 2>/dev/null)" ) >> "$PRE"
+    done <<< "$(worktrees)"
+
+    # On git commit: an entity added in THIS commit ships with notes.
     # Allow global flags between `git` and `commit`: `git -c user.name=x commit`,
     # `git --no-verify commit`, `git -C dir commit` all count.
     printf '%s' "$CMD" \

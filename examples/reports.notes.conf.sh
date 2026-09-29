@@ -23,8 +23,9 @@ NOTES_RULES_DIR=".claude/rules"
 # notes_audit, which can tell a rename from a deletion.
 NOTES_SKIP_ORPHAN=1
 
-# pbir/shell verbs that change a report. A read-only call must not arm the gate.
-NOTES_MUT_RE='(^|[^a-zA-Z_-])(set|add|mv|cp|rm|new|batch|restore|replace|rename|delete|remove|publish|sed -i)([^a-zA-Z_-]|$)'
+# No NOTES_MUT_RE: every change to a report is a file change, which the hook
+# reads from git. A verb list armed the gate for any command that named a
+# report and contained "add" or "replace" anywhere, `git worktree add` included.
 
 # --- the contract ------------------------------------------------------------
 

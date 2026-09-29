@@ -72,7 +72,6 @@ cat > .claude/notes.conf.sh <<'CONF'
 NOTES_DIR="notes"
 NOTES_TEMPLATE="notes/_TEMPLATE.md"
 NOTES_RULES_DIR=".claude/rules"
-NOTES_MUT_RE='(^|[^a-zA-Z_-])(rm|mv|sed -i)([^a-zA-Z_-]|$)'
 notes_entities() { ls -d widgets/*/ 2>/dev/null | sed -E 's#widgets/([^/]+)/#widget|\1#' | sort -u; }
 notes_detect() {
   local all; all="$(notes_entities | cut -d'|' -f2)"

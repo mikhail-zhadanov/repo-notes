@@ -25,7 +25,6 @@ cat > .claude/notes.conf.sh <<'CONF'
 NOTES_DIR="notes"
 NOTES_TEMPLATE="notes/_TEMPLATE.md"
 NOTES_RULES_DIR=".claude/rules"
-NOTES_MUT_RE='(^|[^a-zA-Z_-])(rm|mv|sed -i)([^a-zA-Z_-]|$)'
 notes_entities() { ls -d widgets/*/ 2>/dev/null | sed -E 's#widgets/([^/]+)/#widget|\1#' | sort -u; }
 notes_detect() {
   local all; all="$(notes_entities | cut -d'|' -f2)"
@@ -249,6 +248,41 @@ case "$(stp "$A" w4)" in *"worktrees/B/notes/widgets/beta.md"*) ok "edit armed f
 chk "and not asked again from B" "$(stp "$B" w4)" ""
 reset_b
 git worktree remove --force "$B" >/dev/null 2>&1
+
+echo "== Bash arms only when git shows a change under the entity =="
+# Observed live: a heredoc that edited a notes file and a rule file, whose TEXT
+# named another report's path and used .replace(, armed that report's gate.
+# Nothing under the report changed. A verb anywhere plus a path anywhere is
+# not a change.
+bsh() {  # session cwd tool_use_id command: PreToolUse, run it, PostToolUse
+  local e; e="$(jq -nc --arg c "$4" --arg s "$1" --arg w "$2" --arg t "$3" \
+    '{cwd:$w,session_id:$s,tool_use_id:$t,tool_name:"Bash",tool_input:{command:$c}}')"
+  printf '%s' "$e" | bash "$HOOK" check-new >/dev/null 2>&1
+  (cd "$2" && bash -c "$4") >/dev/null 2>&1
+  printf '%s' "$e" | bash "$HOOK" post >/dev/null 2>&1
+}
+bsh b1 "$FIX" t1 "python3 -c \"open('widgets/beta/main.txt').read()\"; rm -f nothing.tmp"
+chk "read-only command naming the entity: no arm" "$(stp "$FIX" b1)" ""
+bsh b2 "$FIX" t2 "python3 - <<'EOF'
+p='scratch-notes.txt'; s='see widgets/beta/main.txt'.replace('see','read')
+open(p,'w').write(s)
+EOF
+mv scratch-notes.txt scratch-notes.txt.1 && mv scratch-notes.txt.1 scratch-notes.txt"
+chk "heredoc mentioning the entity while editing another file: no arm" "$(stp "$FIX" b2)" ""
+rm -f scratch-notes.txt
+bsh b3 "$FIX" t3 "sed -i.bak 's/beta/BETA/' widgets/beta/main.txt && rm widgets/beta/main.txt.bak"
+case "$(stp "$FIX" b3)" in *"notes/widgets/beta.md"*) ok "sed -i on the entity: arms" ;; *) bad "real change did not arm" ;; esac
+bsh b4 "$FIX" t4 "echo more >> widgets/beta/main.txt && git add widgets/beta && git -c user.email=t@t -c user.name=t commit -qm b"
+case "$(stp "$FIX" b4)" in *"notes/widgets/beta.md"*) ok "edit then commit in one command: arms" ;; *) bad "commit hid the change" ;; esac
+git worktree add -q .claude/worktrees/C >/dev/null 2>&1
+bsh b5 "$FIX" t5 "cd .claude/worktrees/C && echo wt >> widgets/beta/main.txt"
+case "$(stp "$FIX" b5)" in *"worktrees/C/notes/widgets/beta.md"*) ok "cd into a worktree and change it: arms that copy" ;; *) bad "worktree change after cd missed" ;; esac
+git worktree remove --force .claude/worktrees/C >/dev/null 2>&1
+echo 'NOTES_MUT_RE="(^|[^a-z])deploy([^a-z]|\$)"' >> .claude/notes.conf.sh
+bsh b6 "$FIX" t6 "true deploy widgets/beta"
+case "$(stp "$FIX" b6)" in *"notes/widgets/beta.md"*) ok "opt-in NOTES_MUT_RE still arms an action verb" ;; *) bad "NOTES_MUT_RE ignored" ;; esac
+sed -i '' '/^NOTES_MUT_RE=/d' .claude/notes.conf.sh 2>/dev/null || sed -i '/^NOTES_MUT_RE=/d' .claude/notes.conf.sh
+ls "$TMPDIR"/repo-notes/*/b*/pre.* >/dev/null 2>&1 && bad "pre snapshot files left behind" || ok "pre snapshots cleaned up"
 
 echo "== no config means total silence =="
 mv .claude/notes.conf.sh .claude/off.sh

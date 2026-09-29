@@ -129,8 +129,11 @@ lives in `.claude/notes.conf.sh`:
 | `notes_file <kind> <name>` | where that entity's notes file lives |
 | `notes_dirs <kind> <name>` | which paths the entity owns |
 
-Plus `NOTES_MUT_RE`, the shell verbs that count as a change so a read-only
-command does not arm the gate.
+A shell command arms the gate only if git shows a change under an entity it
+names: the hook fingerprints those files in every worktree before the command
+and compares after. Naming a path is not changing it. Optionally
+`NOTES_MUT_RE`, for actions that change an entity without changing its files
+(`terraform apply`, `dbt run`).
 
 Optionally `notes_suggest "$prompt"`, which routes by **intent** rather than by
 path. Path-scoped rules and note injection both need a file to be open in the

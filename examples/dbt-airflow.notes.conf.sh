@@ -9,8 +9,9 @@ NOTES_DIR="notes"
 NOTES_TEMPLATE="notes/_TEMPLATE.md"
 NOTES_RULES_DIR=".claude/rules"
 
-# Shell verbs that change something. Read-only calls must not arm the stop gate.
-NOTES_MUT_RE='(^|[^a-zA-Z_-])(dbt (run|build|seed|snapshot)|git (commit|mv|rm)|sed -i|mv|cp|rm)([^a-zA-Z_-]|$)'
+# Actions that change a model without changing its files. A file change is
+# detected from git on its own; list only what git cannot see.
+NOTES_MUT_RE='(^|[^a-zA-Z_-])dbt (run|build|seed|snapshot)([^a-zA-Z_-]|$)'
 
 # --- 1. every entity that exists ---------------------------------------------
 notes_entities() {

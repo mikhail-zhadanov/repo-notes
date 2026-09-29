@@ -9,7 +9,9 @@ NOTES_DIR="notes"
 NOTES_TEMPLATE="notes/_TEMPLATE.md"
 NOTES_RULES_DIR=".claude/rules"
 
-NOTES_MUT_RE='(^|[^a-zA-Z_-])(terraform (apply|destroy|import|state)|terragrunt (apply|destroy)|git (commit|mv|rm)|sed -i|mv|cp|rm)([^a-zA-Z_-]|$)'
+# Actions that change infrastructure without changing a file. A file change is
+# detected from git on its own; list only what git cannot see.
+NOTES_MUT_RE='(^|[^a-zA-Z_-])(terraform (apply|destroy|import|state)|terragrunt (apply|destroy))([^a-zA-Z_-]|$)'
 
 notes_entities() {
   ls -d modules/*/ 2>/dev/null | sed -E 's#modules/([^/]+)/#module|\1#' | sort -u
