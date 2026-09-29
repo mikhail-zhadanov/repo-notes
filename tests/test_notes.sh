@@ -10,7 +10,7 @@ ok()   { printf '  ok    %s\n' "$1"; pass=$((pass+1)); }
 bad()  { printf '  FAIL  %s\n' "$1"; fail=$((fail+1)); }
 chk()  { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (want '$3', got '$2')"; fi; }
 
-FIX="$(mktemp -d)"
+FIX="$(cd "$(mktemp -d)" && pwd -P)"   # real path: /var is a symlink on macOS
 trap 'rm -rf "$FIX"' EXIT
 cd "$FIX" || exit 1
 
@@ -199,6 +199,56 @@ import sys
 p=sys.argv[1]; t=open(p).read()
 open(p,"w").write(t.split("NOTES_SKIP_ORPHAN=1")[0])
 PY
+
+echo "== worktrees: one entity, one ask, judged by the touched checkout's notes =="
+# Observed live: a session in the main checkout moved its work into a worktree
+# under .claude/worktrees/, recorded the decision in the worktree's notes, and
+# the gate still asked. State was split per checkout basename and per session
+# id (a continued conversation gets a new one), and nothing checked whether any
+# notes copy had changed.
+echo ".claude/worktrees/" >> .git/info/exclude
+git -c user.email=t@t -c user.name=t commit -qam wt >/dev/null 2>&1
+git worktree add -q .claude/worktrees/B >/dev/null 2>&1
+A="$FIX"; B="$FIX/.claude/worktrees/B"
+NA="notes/widgets/alpha.md"
+evp() { printf '{"cwd":"%s","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"%s"}}' "$1" "$2" "$3"; }
+stp() { printf '{"cwd":"%s","session_id":"%s","stop_hook_active":false}' "$1" "$2" | bash "$HOOK" stop 2>/dev/null; }
+reset_b() { git -C "$B" checkout -q -- . 2>/dev/null; rm -f "$B/$NA"; }
+
+run post "$(evp "$A" w1 "$A/widgets/alpha/main.txt")" >/dev/null
+echo "- D1 in A" >> "$A/$NA"
+run post "$(evp "$A" w1 "$B/widgets/alpha/main.txt")" >/dev/null
+mkdir -p "$B/notes/widgets"; echo "- D2 in B" > "$B/$NA"
+chk "A and B both recorded: gate silent" "$(stp "$A" w1)" ""
+chk "and silent from B's cwd too" "$(stp "$B" w1)" ""
+reset_b
+
+# The incident: asked once, then the conversation continues under a new
+# session id and the decision is recorded in the worktree.
+run post "$(evp "$A" c1 "$A/widgets/alpha/main.txt")" >/dev/null
+case "$(stp "$A" c1)" in *"$NA"*) ok "first session asks once" ;; *) bad "first session should ask" ;; esac
+run post "$(evp "$A" c2 "$B/widgets/alpha/main.txt")" >/dev/null
+mkdir -p "$B/notes/widgets"; echo "- D3 in B" > "$B/$NA"
+chk "continued session, B recorded: silent" "$(stp "$A" c2)" ""
+reset_b
+
+run post "$(evp "$A" w2 "$A/widgets/alpha/main.txt")" >/dev/null
+run post "$(evp "$A" w2 "$B/widgets/alpha/main.txt")" >/dev/null
+out="$(stp "$A" w2)"
+case "$out" in *"worktrees/B/$NA"*) ok "neither recorded: asks for B, touched last, by full path" ;; *) bad "should name B's copy (got: $(printf '%s' "$out" | jq -r .hookSpecificOutput.blockReason | head -1))" ;; esac
+case "$out" in *"Update: $A/$NA"*) bad "asked for A's copy" ;; *) ok "does not ask for A's copy" ;; esac
+chk "asks once" "$(stp "$A" w2)" ""
+reset_b
+
+run post "$(evp "$A" w3 "$A/widgets/alpha/main.txt")" >/dev/null
+cp "$A/$NA" "$FIX.orig"; echo "- D4 then reverted" >> "$A/$NA"; cp "$FIX.orig" "$A/$NA"; rm -f "$FIX.orig"
+case "$(stp "$A" w3)" in *"$NA"*) ok "added then reverted (fresh mtime, same text): still asks" ;; *) bad "revert counted as recorded" ;; esac
+
+run post "$(evp "$B" w4 "$B/widgets/beta/main.txt")" >/dev/null
+case "$(stp "$A" w4)" in *"worktrees/B/notes/widgets/beta.md"*) ok "edit armed from B's cwd is seen from A's" ;; *) bad "state split between checkouts" ;; esac
+chk "and not asked again from B" "$(stp "$B" w4)" ""
+reset_b
+git worktree remove --force "$B" >/dev/null 2>&1
 
 echo "== no config means total silence =="
 mv .claude/notes.conf.sh .claude/off.sh

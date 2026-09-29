@@ -42,7 +42,12 @@ NOTES_DIR="${NOTES_DIR:-notes}"
 NOTES_TEMPLATE="${NOTES_TEMPLATE:-$NOTES_DIR/_TEMPLATE.md}"
 NOTES_RULES_DIR="${NOTES_RULES_DIR:-.claude/rules}"
 NOTES_MUT_RE="${NOTES_MUT_RE:-(^|[^a-zA-Z_-])(mv|cp|rm|sed -i)([^a-zA-Z_-]|\$)}"
-NOTES_STATE_NS="${NOTES_STATE_NS:-$(basename "$ROOT")}"
+# Every worktree of one repo shares one state namespace, named after the main
+# checkout. Keyed by the worktree's own basename, a session that moved its work
+# into a worktree split its state in two: the gate armed in one namespace was
+# never seen as asked in the other.
+COMMON="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+NOTES_STATE_NS="${NOTES_STATE_NS:-$(basename "$(dirname "${COMMON:-$ROOT/.git}")")}"
 
 # --- subagents never gate or inject ------------------------------------------
 AGENT_ID="$(j '.agent_id // ""')"
@@ -57,6 +62,20 @@ exists()  { [ -n "$(notes_dirs "${1%%|*}" "${1#*|}" 2>/dev/null)" ]; }
 nfile()   { notes_file "${1%%|*}" "${1#*|}" 2>/dev/null; }
 seen()    { grep -qxF "$1" "$STATE/$2" 2>/dev/null; }
 mark()    { grep -qxF "$1" "$STATE/$2" 2>/dev/null || echo "$1" >> "$STATE/$2"; }
+nhash()   { git hash-object "$1" 2>/dev/null || echo absent; }
+
+# baseline: "entity<TAB>checkout<TAB>hash of that checkout's notes file at the
+# entity's first mutation there". Content, not mtime: an entry added and then
+# reverted leaves a fresh mtime and the same text, and must not count as
+# recorded. Kept most-recently-touched last, so the gate can name that copy.
+touch_baseline() {
+  local h
+  h="$(awk -F'\t' -v k="$1" -v r="$2" '$1==k && $2==r {print $3; exit}' "$STATE/baseline" 2>/dev/null)"
+  [ -z "$h" ] && h="$(nhash "$3")"
+  { awk -F'\t' -v k="$1" -v r="$2" '!($1==k && $2==r)' "$STATE/baseline" 2>/dev/null
+    printf '%s\t%s\t%s\n' "$1" "$2" "$h"; } > "$STATE/baseline.tmp" \
+    && mv "$STATE/baseline.tmp" "$STATE/baseline"
+}
 
 create_stub() {
   local f kind name tick
@@ -124,9 +143,17 @@ case "$MODE" in
       *)
         TEXT="$(j '.tool_input|tostring')" ;;
     esac
-    # An absolute path outside this repo is not this repo's business.
-    case "$TEXT" in
-      /*) case "$TEXT" in "$ROOT"/*) ;; *) exit 0 ;; esac ;;
+    # A file tool's checkout comes from its path, not from cwd: a session in the
+    # main checkout can edit a worktree's copy, and that copy's notes are the
+    # ones that must record it. A path in another repo, or in no repo, is not
+    # this repo's business. Bash has no single path, so it stays with cwd.
+    case "$TOOL" in
+      Edit|Write|MultiEdit|NotebookEdit|Read)
+        case "$TEXT" in /*) d="$TEXT" ;; *) d="$ROOT/$TEXT" ;; esac
+        while [ ! -d "$d" ] && [ "$d" != / ]; do d="$(dirname "$d")"; done
+        R="$(git -C "$d" rev-parse --show-toplevel 2>/dev/null)"
+        [ -n "$R" ] && [ "$(git -C "$R" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" = "$COMMON" ] || exit 0
+        ROOT="$R"; cd "$ROOT" || exit 0 ;;
     esac
     CTX=""
     while IFS= read -r it; do
@@ -140,14 +167,21 @@ case "$MODE" in
           CTX+="$(head -c 12000 "$f")"$'\n\n'
         else
           CTX+="[repo-notes] No notes yet for ${it#*|}. One will be created when you change it. Recent history:"$'\n'
+          # An array, never word-split: "Sales Pipeline.Report" is one path.
+          owned_arr=()
+          while IFS= read -r d; do [ -n "$d" ] && owned_arr+=("$d"); done \
+            <<< "$(notes_dirs "${it%%|*}" "${it#*|}" 2>/dev/null)"
           CTX+="$(git -C "$ROOT" log --format='%h %ad %s' --date=short \
-                  -- $(notes_dirs "${it%%|*}" "${it#*|}") 2>/dev/null | head -5)"$'\n\n'
+                  -- ${owned_arr[@]+"${owned_arr[@]}"} 2>/dev/null | head -5)"$'\n\n'
         fi
       fi
       case "$TOOL" in
-        Edit|Write|MultiEdit|NotebookEdit) mark "$it" mutated ;;
-        Bash) printf '%s' "$TEXT" | grep -qE "$NOTES_MUT_RE" && mark "$it" mutated ;;
+        Edit|Write|MultiEdit|NotebookEdit) ;;
+        Bash) printf '%s' "$TEXT" | grep -qE "$NOTES_MUT_RE" || continue ;;
+        *) continue ;;
       esac
+      mark "$it" mutated
+      touch_baseline "$it" "$ROOT" "$f"
     done <<< "$(notes_detect "$TEXT" 2>/dev/null)"
     [ -n "$CTX" ] && jq -n --arg c "$CTX" \
       '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:$c}}'
@@ -160,15 +194,28 @@ case "$MODE" in
     PENDING=""
     while IFS= read -r it; do
       [ -z "$it" ] && continue
-      exists "$it" || continue
       seen "$it" gated && continue          # asked once per entity per session
-      create_stub "$it"
-      PENDING+="$(nfile "$it")"$'\n'
+      # Already recorded: the notes copy in any checkout where this entity was
+      # touched differs from its baseline. This also holds when the session id
+      # changes mid-conversation (a continued session starts with empty state),
+      # which is what made the gate ask twice for one decision.
+      r="$ROOT"; done_=""
+      while IFS=$'\t' read -r k br bh; do
+        [ "$k" = "$it" ] || continue
+        r="$br"
+        [ "$(nhash "$(cd "$br" 2>/dev/null && nfile "$it")")" != "$bh" ] && done_=1
+      done 2>/dev/null < "$STATE/baseline"
+      [ -n "$done_" ] && continue
+      # Ask for the copy in the checkout touched last, by full path, so a
+      # session working across a checkout and its worktrees sees which is meant.
+      f="$( (cd "$r" 2>/dev/null && ROOT="$r" && exists "$it" && create_stub "$it" && nfile "$it") )"
+      [ -z "$f" ] && continue
+      PENDING+="$f"$'\n'
       mark "$it" gated
     done <<< "$(cat "$STATE/mutated" 2>/dev/null)"
 
     [ -z "${PENDING//[$'\n' ]/}" ] && exit 0
-    PENDING="$(printf '%s' "$PENDING" | sed "s|^$ROOT/||" | grep -v '^$' | paste -sd, -)"
+    PENDING="$(printf '%s' "$PENDING" | grep -v '^$' | paste -sd, -)"
 
     # Blocking Stop, belt and braces. The documented JSON shape is
     # hookSpecificOutput.block/blockReason (NOT decision/reason, NOT

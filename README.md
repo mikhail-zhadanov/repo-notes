@@ -27,7 +27,7 @@ the right files.** See [DESIGN.md](DESIGN.md) for the reasoning and the evidence
 | moment | behaviour |
 |---|---|
 | you read or edit an entity's files | that entity's notes are injected into context, once per session |
-| you change something and the turn ends | asked once per entity to record what was decided and what was rejected |
+| you change something and the turn ends | asked once per entity to record what was decided and what was rejected, unless that entity's notes already changed in the checkout or worktree where it was edited |
 | a new entity is committed without notes | `git commit` is blocked, naming the missing file |
 | session start | an audit reports missing notes, orphaned notes, and stale anchors |
 | `/notes` | manual read/write, for investigations that changed no file |
